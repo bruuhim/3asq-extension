@@ -24,20 +24,24 @@ class Provider {
 
         const results: SearchResult[] = []
 
-        $(".c-tabs-item__content, .tab-content-wrap, .c-tabs-item").each((i, el) => {
-            const titleEl = el.find(".post-title h3 a, .post-title a")
-            if (titleEl.length() === 0) return
+        $(".c-tabs-item__content, .tab-content-wrap, .c-tabs-item, .row.c-tabs-item__content").each((i: number, el: any) => {
+            // Find title - target the precise link to avoid duplicates
+            const titleAnchor = el.find(".post-title h3 a, .post-title h4 a, .post-title a").first()
+            if (titleAnchor.length() === 0) return
 
-            const title = titleEl.text().trim()
-            const href = titleEl.attr("href")
+            const title = titleAnchor.text().trim()
+            const href = titleAnchor.attr("href")
             if (!href) return
 
             const slugMatch = href.match(/\/manga\/([^/]+)\//)
             if (!slugMatch) return
             const slug = slugMatch[1]
 
+            // Find image - handle lazy loading
             const imgEl = el.find("img")
-            const image = imgEl.attr("src")?.trim() || imgEl.attr("data-src")?.trim()
+            const image = imgEl.attr("data-src")?.trim() || 
+                          imgEl.attr("data-lazy-src")?.trim() || 
+                          imgEl.attr("src")?.trim()
 
             results.push({
                 id: slug,
@@ -54,12 +58,46 @@ class Provider {
         const url = `${this.api}/manga/${mangaId}/`
         const resp = await this.fetch(url)
         const html = await resp.text()
-        const $ = LoadDoc(html)
+        let $ = LoadDoc(html)
 
-        const chapters: ChapterDetails[] = []
+        let chapters: ChapterDetails[] = []
         
-        $(".wp-manga-chapter").each((i, el) => {
-            const a = el.find("a")
+        // 1. Try SSR Chapters
+        chapters = this.parseChapters($, mangaId)
+
+        // 2. If nothing found, try AJAX (Madara special)
+        if (chapters.length === 0) {
+            // Find the post ID which is required for the AJAX call
+            // Usually found in <body class="... postid-12345 ..."> or as data-id
+            const postIdMatch = html.match(/postid-(\d+)/) || html.match(/data-id="(\d+)"/)
+            if (postIdMatch) {
+                const postId = postIdMatch[1]
+                const ajaxUrl = `${this.api}/wp-admin/admin-ajax.php`
+                const ajaxResp = await this.fetch(ajaxUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: `action=manga_get_chapters&manga=${postId}`
+                })
+                const ajaxHtml = await ajaxResp.text()
+                const $ajax = LoadDoc(ajaxHtml)
+                chapters = this.parseChapters($ajax, mangaId)
+            }
+        }
+
+        // Seanime requirement: ascending order (Chapter 1, 2, 3...)
+        // Madara returns descending, so we reverse
+        chapters.reverse()
+        chapters.forEach((chapter, index) => {
+            chapter.index = index
+        })
+
+        return chapters
+    }
+
+    private parseChapters($: any, mangaId: string): ChapterDetails[] {
+        const chapters: ChapterDetails[] = []
+        $(".wp-manga-chapter").each((i: number, el: any) => {
+            const a = el.find("a").first()
             const href = a.attr("href")
             if (!href) return
 
@@ -76,13 +114,6 @@ class Provider {
                 index: 0 // Placeholder
             })
         })
-
-        // Return sorted in ascending order (Seanime requirement)
-        chapters.reverse()
-        chapters.forEach((chapter, index) => {
-            chapter.index = index
-        })
-
         return chapters
     }
 
@@ -96,8 +127,10 @@ class Provider {
 
         const pages: ChapterPage[] = []
 
-        $(".wp-manga-chapter-img").each((i, el) => {
-            const src = el.attr("src")?.trim() || el.attr("data-src")?.trim()
+        $(".wp-manga-chapter-img").each((i: number, el: any) => {
+            const src = el.attr("data-src")?.trim() || 
+                        el.attr("data-lazy-src")?.trim() || 
+                        el.attr("src")?.trim()
             if (src) {
                 pages.push({
                     url: src,
