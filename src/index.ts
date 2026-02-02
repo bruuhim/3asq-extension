@@ -5,6 +5,7 @@ class Provider {
     private userAgent: string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     private async fetch(url: string, opts: RequestInit = {}): Promise<Response> {
+        console.log(`[3asq] Fetching: ${url}`)
         return fetch(url, {
             ...opts,
             headers: {
@@ -17,6 +18,7 @@ class Provider {
 
     // Search for manga based on a query. Returns a list of search results.
     async search({ query }: QueryOptions): Promise<SearchResult[]> {
+        console.log(`[3asq] Searching for: ${query}`)
         const url = `${this.api}/?s=${encodeURIComponent(query)}&post_type=wp-manga`
         const resp = await this.fetch(url)
         const html = await resp.text()
@@ -25,7 +27,6 @@ class Provider {
         const results: SearchResult[] = []
 
         $(".c-tabs-item__content, .tab-content-wrap, .c-tabs-item, .row.c-tabs-item__content").each((i: number, el: any) => {
-            // Find title - target the precise link to avoid duplicates
             const titleAnchor = el.find(".post-title h3 a, .post-title h4 a, .post-title a").first()
             if (titleAnchor.length() === 0) return
 
@@ -37,7 +38,6 @@ class Provider {
             if (!slugMatch) return
             const slug = slugMatch[1]
 
-            // Find image - handle lazy loading
             const imgEl = el.find("img")
             const image = imgEl.attr("data-src")?.trim() || 
                           imgEl.attr("data-lazy-src")?.trim() || 
@@ -50,11 +50,13 @@ class Provider {
             })
         })
 
+        console.log(`[3asq] Search results: ${results.length}`)
         return results
     }
 
     // Returns the chapters based on the manga ID (slug).
     async findChapters(mangaId: string): Promise<ChapterDetails[]> {
+        console.log(`[3asq] Finding chapters for manga: ${mangaId}`)
         const url = `${this.api}/manga/${mangaId}/`
         const resp = await this.fetch(url)
         const html = await resp.text()
@@ -64,14 +66,15 @@ class Provider {
         
         // 1. Try SSR Chapters
         chapters = this.parseChapters($, mangaId)
+        console.log(`[3asq] SSR Chapters found: ${chapters.length}`)
 
         // 2. If nothing found, try AJAX (Madara special)
         if (chapters.length === 0) {
-            // Find the post ID which is required for the AJAX call
-            // Usually found in <body class="... postid-12345 ..."> or as data-id
+            console.log(`[3asq] No SSR chapters found, trying AJAX fallback...`)
             const postIdMatch = html.match(/postid-(\d+)/) || html.match(/data-id="(\d+)"/)
             if (postIdMatch) {
                 const postId = postIdMatch[1]
+                console.log(`[3asq] Found Post ID: ${postId}`)
                 const ajaxUrl = `${this.api}/wp-admin/admin-ajax.php`
                 const ajaxResp = await this.fetch(ajaxUrl, {
                     method: "POST",
@@ -79,18 +82,22 @@ class Provider {
                     body: `action=manga_get_chapters&manga=${postId}`
                 })
                 const ajaxHtml = await ajaxResp.text()
+                console.log(`[3asq] AJAX Response length: ${ajaxHtml.length}`)
                 const $ajax = LoadDoc(ajaxHtml)
                 chapters = this.parseChapters($ajax, mangaId)
+                console.log(`[3asq] AJAX Chapters found: ${chapters.length}`)
+            } else {
+                console.log(`[3asq] COULD NOT FIND POST ID IN HTML`)
             }
         }
 
-        // Seanime requirement: ascending order (Chapter 1, 2, 3...)
-        // Madara returns descending, so we reverse
+        // Seanime requirement: ascending order
         chapters.reverse()
         chapters.forEach((chapter, index) => {
             chapter.index = index
         })
 
+        console.log(`[3asq] Total chapters returning: ${chapters.length}`)
         return chapters
     }
 
@@ -111,7 +118,7 @@ class Provider {
                 url: href,
                 title: title,
                 chapter: chapterSlug,
-                index: 0 // Placeholder
+                index: 0
             })
         })
         return chapters
@@ -119,6 +126,7 @@ class Provider {
 
     // Returns the chapter pages based on the chapter ID (mangaSlug$chapterSlug).
     async findChapterPages(chapterId: string): Promise<ChapterPage[]> {
+        console.log(`[3asq] Finding pages for chapter: ${chapterId}`)
         const [mangaId, chapterSlug] = chapterId.split("$")
         const url = `${this.api}/manga/${mangaId}/${chapterSlug}/`
         const resp = await this.fetch(url)
@@ -142,6 +150,7 @@ class Provider {
             }
         })
 
+        console.log(`[3asq] Pages found: ${pages.length}`)
         return pages
     }
 
