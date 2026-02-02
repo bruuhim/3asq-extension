@@ -21,7 +21,7 @@ class Provider {
         // Find each manga entry container
         // Madara theme usually has results in .c-tabs-item__content or .tab-content-wrap
         // Use a more generic regex to find title blocks and then work from there
-        const titleBlockRegex = /<div class="post-title">[\s\S]*?<h3 class="h4"><a href="https:\/\/3asq\.org\/manga\/([^/]+)\/">([^<]+)<\/a><\/h3>/g
+        const titleBlockRegex = /<div class="post-title">[\s\S]*?<h3[^>]*><a href="[^"]*\/manga\/([^/]+)\/">([^<]+)<\/a><\/h3>/g
         
         let match
         while ((match = titleBlockRegex.exec(html)) !== null) {
@@ -30,7 +30,7 @@ class Provider {
             
             // Look for the image associated with this slug in the HTML
             // Search for the anchor that contains the image for this manga
-            const imgRegex = new RegExp(`<a href="https:\\/\\/3asq\\.org\\/manga\\/${slug}\\/"[^>]*>\\s*<img[^>]*src="\\s*([^"\\s]+)\\s*"`, "i")
+            const imgRegex = new RegExp(`<a href="[^"]*\\/manga\\/${slug}\\/"[^>]*>\\s*<img[^>]*src="\\s*([^"\\s]+)\\s*"`, "i")
             const imgMatch = html.match(imgRegex)
             
             results.push({
@@ -52,7 +52,7 @@ class Provider {
         const chapters: ChapterDetails[] = []
         
         // Madara chapters are in li.wp-manga-chapter
-        const chapterRegex = /<li class="[^"]*wp-manga-chapter[^"]*">\s*<a href="https:\/\/3asq\.org\/manga\/[^/]+\/([^/]+)\/">\s*([^<]+)\s*<\/a>/g
+        const chapterRegex = /<li class="[^"]*wp-manga-chapter[^"]*">\s*<a href="[^"]*\/manga\/[^/]+\/([^/]+)\/">\s*([^<]+)\s*<\/a>/g
         let match
         let index = 0
         
@@ -65,12 +65,17 @@ class Provider {
                 url: `${this.api}/manga/${mangaId}/${chapterSlug}/`,
                 title: chapterTitle,
                 chapter: chapterSlug,
-                index: index++
+                index: 0, // Placeholder
             })
         }
 
         // Return sorted in ascending order (Seanime requirement)
-        return chapters.reverse()
+        chapters.reverse()
+        chapters.forEach((chapter, index) => {
+            chapter.index = index
+        })
+
+        return chapters
     }
 
     // Returns the chapter pages based on the chapter ID (mangaSlug/chapterSlug).

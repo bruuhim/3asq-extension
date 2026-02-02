@@ -2,12 +2,12 @@
   "id": "al-3asq",
   "name": "3asq",
   "version": "1.0.0",
-  "author": "Brahim",
+  "author": "Bruuhim",
   "description": "Manga provider for 3asq.org",
   "type": "manga-provider",
   "language": "typescript",
   "lang": "ar",
-  "icon": "https://3asq.org/wp-content/uploads/2021/04/cropped-favicon-32x32.png",
+  "icon": "https://3asq.org/wp-content/uploads/2021/06/cropped-ICON-192x192.png",
   "payloadURI": "https://raw.githubusercontent.com/bruuhim/3asq-extension/main/src/index.ts",
   "manifestURI": "https://raw.githubusercontent.com/bruuhim/3asq-extension/main/src/3asq.json"
 }
