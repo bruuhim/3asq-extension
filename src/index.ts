@@ -1,44 +1,50 @@
 /// <reference path="../typing/manga-provider.d.ts" />
 
 class Provider {
-    private api = "https://3asq.org"
+    private api: string = "https://3asq.org"
+    private userAgent: string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    getSettings(): Settings {
-        return {
-            supportsMultiLanguage: false,
-            supportsMultiScanlator: false,
-        }
+    private async fetch(url: string, opts: RequestInit = {}): Promise<Response> {
+        return fetch(url, {
+            ...opts,
+            headers: {
+                "User-Agent": this.userAgent,
+                "Referer": this.api + "/",
+                ...opts.headers,
+            }
+        })
     }
 
-    // Returns the search results based on the query.
-    async search(opts: QueryOptions): Promise<SearchResult[]> {
-        const url = `${this.api}/?s=${encodeURIComponent(opts.query)}&post_type=wp-manga`
-        const resp = await fetch(url)
+    // Search for manga based on a query. Returns a list of search results.
+    async search({ query }: QueryOptions): Promise<SearchResult[]> {
+        const url = `${this.api}/?s=${encodeURIComponent(query)}&post_type=wp-manga`
+        const resp = await this.fetch(url)
         const html = await resp.text()
+        const $ = LoadDoc(html)
 
         const results: SearchResult[] = []
-        
-        // Find each manga entry container
-        // Madara theme usually has results in .c-tabs-item__content or .tab-content-wrap
-        // Use a more generic regex to find title blocks and then work from there
-        const titleBlockRegex = /<div class="post-title">[\s\S]*?<h3[^>]*><a href="[^"]*\/manga\/([^/]+)\/">([^<]+)<\/a><\/h3>/g
-        
-        let match
-        while ((match = titleBlockRegex.exec(html)) !== null) {
-            const slug = match[1]
-            const title = match[2].trim()
-            
-            // Look for the image associated with this slug in the HTML
-            // Search for the anchor that contains the image for this manga
-            const imgRegex = new RegExp(`<a href="[^"]*\\/manga\\/${slug}\\/"[^>]*>\\s*<img[^>]*src="\\s*([^"\\s]+)\\s*"`, "i")
-            const imgMatch = html.match(imgRegex)
-            
+
+        $(".c-tabs-item__content, .tab-content-wrap, .c-tabs-item").each((i, el) => {
+            const titleEl = el.find(".post-title h3 a, .post-title a")
+            if (titleEl.length() === 0) return
+
+            const title = titleEl.text().trim()
+            const href = titleEl.attr("href")
+            if (!href) return
+
+            const slugMatch = href.match(/\/manga\/([^/]+)\//)
+            if (!slugMatch) return
+            const slug = slugMatch[1]
+
+            const imgEl = el.find("img")
+            const image = imgEl.attr("src")?.trim() || imgEl.attr("data-src")?.trim()
+
             results.push({
                 id: slug,
                 title: title,
-                image: imgMatch ? imgMatch[1].trim() : undefined
+                image: image
             })
-        }
+        })
 
         return results
     }
@@ -46,28 +52,30 @@ class Provider {
     // Returns the chapters based on the manga ID (slug).
     async findChapters(mangaId: string): Promise<ChapterDetails[]> {
         const url = `${this.api}/manga/${mangaId}/`
-        const resp = await fetch(url)
+        const resp = await this.fetch(url)
         const html = await resp.text()
+        const $ = LoadDoc(html)
 
         const chapters: ChapterDetails[] = []
         
-        // Madara chapters are in li.wp-manga-chapter
-        const chapterRegex = /<li class="[^"]*wp-manga-chapter[^"]*">\s*<a href="[^"]*\/manga\/[^/]+\/([^/]+)\/">\s*([^<]+)\s*<\/a>/g
-        let match
-        let index = 0
-        
-        while ((match = chapterRegex.exec(html)) !== null) {
-            const chapterSlug = match[1]
-            const chapterTitle = match[2].trim()
-            
+        $(".wp-manga-chapter").each((i, el) => {
+            const a = el.find("a")
+            const href = a.attr("href")
+            if (!href) return
+
+            const slugMatch = href.match(/\/manga\/[^/]+\/([^/]+)\//)
+            if (!slugMatch) return
+            const chapterSlug = slugMatch[1]
+            const title = a.text().trim()
+
             chapters.push({
-                id: `${mangaId}/${chapterSlug}`, // Combined ID
-                url: `${this.api}/manga/${mangaId}/${chapterSlug}/`,
-                title: chapterTitle,
+                id: `${mangaId}$${chapterSlug}`,
+                url: href,
+                title: title,
                 chapter: chapterSlug,
-                index: 0, // Placeholder
+                index: 0 // Placeholder
             })
-        }
+        })
 
         // Return sorted in ascending order (Seanime requirement)
         chapters.reverse()
@@ -78,36 +86,36 @@ class Provider {
         return chapters
     }
 
-    // Returns the chapter pages based on the chapter ID (mangaSlug/chapterSlug).
+    // Returns the chapter pages based on the chapter ID (mangaSlug$chapterSlug).
     async findChapterPages(chapterId: string): Promise<ChapterPage[]> {
-        const url = `${this.api}/manga/${chapterId}/`
-        const resp = await fetch(url)
+        const [mangaId, chapterSlug] = chapterId.split("$")
+        const url = `${this.api}/manga/${mangaId}/${chapterSlug}/`
+        const resp = await this.fetch(url)
         const html = await resp.text()
+        const $ = LoadDoc(html)
 
         const pages: ChapterPage[] = []
-        
-        // Madara images are in .reading-content
-        // Extract all img tags with the wp-manga-chapter-img class
-        // Use a 2-step approach: match the tag, then the src, to be order-independent
-        const imgTagRegex = /<img[^>]*class="[^"]*wp-manga-chapter-img[^"]*"[^>]*>/g
-        let tagMatch
-        let index = 0
-        
-        while ((tagMatch = imgTagRegex.exec(html)) !== null) {
-            const tag = tagMatch[0]
-            const srcMatch = tag.match(/src="\s*([^"\s]+)\s*"/)
-            
-            if (srcMatch) {
+
+        $(".wp-manga-chapter-img").each((i, el) => {
+            const src = el.attr("src")?.trim() || el.attr("data-src")?.trim()
+            if (src) {
                 pages.push({
-                    url: srcMatch[1].trim(),
-                    index: index++,
+                    url: src,
+                    index: i,
                     headers: {
-                        "Referer": `${this.api}/`
+                        "Referer": this.api + "/"
                     }
                 })
             }
-        }
+        })
 
         return pages
+    }
+
+    getSettings(): Settings {
+        return {
+            supportsMultiLanguage: false,
+            supportsMultiScanlator: false,
+        }
     }
 }
