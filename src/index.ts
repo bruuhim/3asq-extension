@@ -11,6 +11,7 @@ class Provider {
             headers: {
                 "User-Agent": this.userAgent,
                 "Referer": this.api + "/",
+                "X-Requested-With": "XMLHttpRequest",
                 ...opts.headers,
             }
         })
@@ -50,31 +51,33 @@ class Provider {
             })
         })
 
-        console.log(`[3asq] Search results: ${results.length}`)
+        console.log(`[3asq] Search found ${results.length} results`)
         return results
     }
 
     // Returns the chapters based on the manga ID (slug).
     async findChapters(mangaId: string): Promise<ChapterDetails[]> {
-        console.log(`[3asq] Finding chapters for manga: ${mangaId}`)
-        const url = `${this.api}/manga/${mangaId}/`
-        const resp = await this.fetch(url)
+        console.log(`[3asq] findChapters: ${mangaId}`)
+        const mangaUrl = `${this.api}/manga/${mangaId}/`
+        const resp = await this.fetch(mangaUrl)
         const html = await resp.text()
         let $ = LoadDoc(html)
 
         let chapters: ChapterDetails[] = []
         
-        // 1. Try SSR Chapters
+        // 1. Try SSR with multiple selectors
         chapters = this.parseChapters($, mangaId)
-        console.log(`[3asq] SSR Chapters found: ${chapters.length}`)
+        console.log(`[3asq] SSR extract count: ${chapters.length}`)
 
-        // 2. If nothing found, try AJAX (Madara special)
+        // 2. AJAX Fallback
         if (chapters.length === 0) {
-            console.log(`[3asq] No SSR chapters found, trying AJAX fallback...`)
+            console.log(`[3asq] SSR failed, attempting AJAX...`)
             const postIdMatch = html.match(/postid-(\d+)/) || html.match(/data-id="(\d+)"/)
             if (postIdMatch) {
                 const postId = postIdMatch[1]
-                console.log(`[3asq] Found Post ID: ${postId}`)
+                console.log(`[3asq] Post ID: ${postId}`)
+                
+                // Many Madara sites allow fetching via [manga-url]/ajax/chapters/
                 const ajaxUrl = `${this.api}/wp-admin/admin-ajax.php`
                 const ajaxResp = await this.fetch(ajaxUrl, {
                     method: "POST",
@@ -82,36 +85,50 @@ class Provider {
                     body: `action=manga_get_chapters&manga=${postId}`
                 })
                 const ajaxHtml = await ajaxResp.text()
-                console.log(`[3asq] AJAX Response length: ${ajaxHtml.length}`)
-                const $ajax = LoadDoc(ajaxHtml)
-                chapters = this.parseChapters($ajax, mangaId)
-                console.log(`[3asq] AJAX Chapters found: ${chapters.length}`)
+                
+                if (ajaxHtml.length > 5) {
+                    const $ajax = LoadDoc(ajaxHtml)
+                    chapters = this.parseChapters($ajax, mangaId)
+                    console.log(`[3asq] AJAX Admin extract count: ${chapters.length}`)
+                } else if (ajaxHtml === "0") {
+                    console.log(`[3asq] AJAX Admin returned '0', trying direct AJAX URL...`)
+                    const directAjaxUrl = `${this.api}/manga/${mangaId}/ajax/chapters/`
+                    const directResp = await this.fetch(directAjaxUrl, { method: "POST" })
+                    const directHtml = await directResp.text()
+                    const $direct = LoadDoc(directHtml)
+                    chapters = this.parseChapters($direct, mangaId)
+                    console.log(`[3asq] Direct AJAX extract count: ${chapters.length}`)
+                }
             } else {
-                console.log(`[3asq] COULD NOT FIND POST ID IN HTML`)
+                console.log(`[3asq] Post ID not found in HTML`)
             }
         }
 
-        // Seanime requirement: ascending order
+        // Final sorting
         chapters.reverse()
         chapters.forEach((chapter, index) => {
             chapter.index = index
         })
 
-        console.log(`[3asq] Total chapters returning: ${chapters.length}`)
+        console.log(`[3asq] Returning ${chapters.length} chapters`)
         return chapters
     }
 
     private parseChapters($: any, mangaId: string): ChapterDetails[] {
         const chapters: ChapterDetails[] = []
-        $(".wp-manga-chapter").each((i: number, el: any) => {
+        // Target common Madara chapter classes
+        $(".wp-manga-chapter, .chapter-li, .listing-chapters_wrap li").each((i: number, el: any) => {
             const a = el.find("a").first()
             const href = a.attr("href")
             if (!href) return
 
+            // Ensure the link is actually a chapter link for this manga
+            if (!href.includes(mangaId)) return
+
             const slugMatch = href.match(/\/manga\/[^/]+\/([^/]+)\//)
             if (!slugMatch) return
             const chapterSlug = slugMatch[1]
-            const title = a.text().trim()
+            const title = a.text().trim() || chapterSlug
 
             chapters.push({
                 id: `${mangaId}$${chapterSlug}`,
@@ -124,9 +141,8 @@ class Provider {
         return chapters
     }
 
-    // Returns the chapter pages based on the chapter ID (mangaSlug$chapterSlug).
+    // Returns the chapter pages based on the chapter ID.
     async findChapterPages(chapterId: string): Promise<ChapterPage[]> {
-        console.log(`[3asq] Finding pages for chapter: ${chapterId}`)
         const [mangaId, chapterSlug] = chapterId.split("$")
         const url = `${this.api}/manga/${mangaId}/${chapterSlug}/`
         const resp = await this.fetch(url)
@@ -150,7 +166,7 @@ class Provider {
             }
         })
 
-        console.log(`[3asq] Pages found: ${pages.length}`)
+        console.log(`[3asq] Found ${pages.length} pages`)
         return pages
     }
 

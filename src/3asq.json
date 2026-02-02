@@ -1,7 +1,7 @@
 {
   "id": "al-3asq",
   "name": "3asq",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "author": "Bruuhim",
   "description": "Manga provider for 3asq.org",
   "type": "manga-provider",
