@@ -12,7 +12,7 @@ A Seanime Manga Provider extension for [3asq.org](https://www.3asq.org/).
 
 To add this extension to your Seanime instance, add the following URL to your extension settings:
 
-`https://raw.githubusercontent.com/Brahim/3asq-seanime-extension/main/src/3asq.json`
+`https://raw.githubusercontent.com/bruuhim/3asq-extension/main/src/3asq.json`
 
 ## Development
 

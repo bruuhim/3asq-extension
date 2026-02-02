@@ -7,6 +7,6 @@
   "type": "manga-provider",
   "language": "ar",
   "icon": "https://3asq.org/wp-content/uploads/2021/04/cropped-favicon-32x32.png",
-  "payloadURI": "https://raw.githubusercontent.com/Brahim/3asq-seanime-extension/main/src/index.ts",
-  "manifestURI": "https://raw.githubusercontent.com/Brahim/3asq-seanime-extension/main/src/3asq.json"
+  "payloadURI": "https://raw.githubusercontent.com/bruuhim/3asq-extension/main/src/index.ts",
+  "manifestURI": "https://raw.githubusercontent.com/bruuhim/3asq-extension/main/src/3asq.json"
 }
